@@ -5,6 +5,10 @@ A powerful exam simulator plugin for Obsidian, inspired by VCE Exam Simulator. C
 ![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed)
 ![Version](https://img.shields.io/badge/Version-1.0.0-blue)
 
+![Exam Question](exam-question.png)
+
+![Exam Result](exam-result.png)
+
 ## Features
 
 ✅ **Multiple Question Types**
