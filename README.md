@@ -1,6 +1,7 @@
 # Obsidian Exam Creator
 
-A powerful exam simulator plugin for Obsidian, inspired by VCE Exam Simulator. Create and take practice exams directly from your notes with scoring, timer, and detailed review features.
+A powerful exam simulator plugin for Obsidian, inspired by some popular Exam Simulators. 
+Create and take practice exams directly from your notes with scoring, timer, and detailed review features.
 
 ![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed)
 ![Version](https://img.shields.io/badge/Version-1.0.0-blue)
