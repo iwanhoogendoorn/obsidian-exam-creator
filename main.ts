@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, MarkdownRenderer } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -43,6 +43,44 @@ interface ExamResult {
     percentage: number;
     timeTaken: number; // seconds
     questions: Question[];
+}
+
+// ============================================================================
+// CONFIRM MODAL
+// ============================================================================
+
+class ConfirmModal extends Modal {
+    private message: string;
+    private onConfirm: () => void;
+
+    constructor(app: App, message: string, onConfirm: () => void) {
+        super(app);
+        this.message = message;
+        this.onConfirm = onConfirm;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('exam-confirm-modal');
+
+        contentEl.createEl('p', { text: this.message });
+
+        const buttonContainer = contentEl.createDiv('confirm-buttons');
+        
+        const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel', cls: 'exam-btn exam-btn-secondary' });
+        cancelBtn.onclick = () => this.close();
+
+        const confirmBtn = buttonContainer.createEl('button', { text: 'Submit', cls: 'exam-btn exam-btn-primary' });
+        confirmBtn.onclick = () => {
+            this.close();
+            this.onConfirm();
+        };
+    }
+
+    onClose() {
+        this.contentEl.empty();
+    }
 }
 
 // ============================================================================
@@ -294,7 +332,7 @@ class ExamModal extends Modal {
         
         // Submit button
         const submitContainer = contentEl.createDiv('exam-submit-container');
-        const submitBtn = submitContainer.createEl('button', { text: 'Submit Exam', cls: 'exam-btn exam-btn-primary' });
+        const submitBtn = submitContainer.createEl('button', { text: 'Submit exam', cls: 'exam-btn exam-btn-primary' });
         submitBtn.onclick = () => this.submitExam();
         
         // Render first question
@@ -338,13 +376,13 @@ class ExamModal extends Modal {
         // Question type badge
         const badge = card.createDiv('question-type-badge');
         if (question.type === 'multiple') {
-            badge.textContent = 'Multiple Choice (Select all that apply)';
+            badge.textContent = 'Multiple choice (select all that apply)';
             badge.addClass('badge-multiple');
         } else if (question.type === 'freetext') {
-            badge.textContent = 'Free Text';
+            badge.textContent = 'Free text';
             badge.addClass('badge-freetext');
         } else {
-            badge.textContent = 'Single Choice';
+            badge.textContent = 'Single choice';
             badge.addClass('badge-single');
         }
         
@@ -443,10 +481,9 @@ class ExamModal extends Modal {
         const navBtns = this.contentEl.querySelectorAll('.question-nav-btn');
         navBtns.forEach((btn, idx) => {
             btn.removeClass('answered');
-            if (this.questions[idx].userAnswer !== undefined && 
-                (Array.isArray(this.questions[idx].userAnswer) ? 
-                    (this.questions[idx].userAnswer as string[]).length > 0 : 
-                    this.questions[idx].userAnswer !== '')) {
+            const answer = this.questions[idx].userAnswer;
+            if (answer !== undefined && 
+                (Array.isArray(answer) ? answer.length > 0 : answer !== '')) {
                 btn.addClass('answered');
             }
         });
@@ -479,10 +516,18 @@ class ExamModal extends Modal {
         ).length;
         
         if (unanswered > 0) {
-            const confirmSubmit = confirm(`You have ${unanswered} unanswered question(s). Are you sure you want to submit?`);
-            if (!confirmSubmit) return;
+            new ConfirmModal(
+                this.app,
+                `You have ${unanswered} unanswered question(s). Are you sure you want to submit?`,
+                () => this.finalizeSubmission()
+            ).open();
+            return;
         }
         
+        this.finalizeSubmission();
+    }
+    
+    private finalizeSubmission() {
         const timeTaken = Math.floor((Date.now() - this.startTime) / 1000);
         
         // Calculate results
@@ -564,7 +609,7 @@ class ResultsModal extends Modal {
         
         // Header
         const header = contentEl.createDiv('results-header');
-        header.createEl('h2', { text: 'Exam Results' });
+        header.createEl('h2', { text: 'Exam results' });
         
         // Score card
         const scoreCard = contentEl.createDiv('score-card');
@@ -598,7 +643,7 @@ class ResultsModal extends Modal {
         
         // Review section
         const reviewSection = contentEl.createDiv('review-section');
-        reviewSection.createEl('h3', { text: 'Review Answers' });
+        reviewSection.createEl('h3', { text: 'Review answers' });
         
         this.result.questions.forEach((q, idx) => {
             const isCorrect = this.checkAnswer(q);
@@ -664,7 +709,8 @@ class ResultsModal extends Modal {
             } else {
                 // Free text answer review
                 const freetextReview = content.createDiv('review-freetext');
-                freetextReview.createDiv({ text: `Your answer: ${q.userAnswer || '(not answered)'}` });
+                const userAnswerText = typeof q.userAnswer === 'string' ? q.userAnswer : '(not answered)';
+                freetextReview.createDiv({ text: `Your answer: ${userAnswerText}` });
                 freetextReview.createDiv({ text: `Correct answer: ${q.correctAnswers[0]}`, cls: 'correct-answer-text' });
             }
         });
@@ -715,10 +761,12 @@ class ExamCreatorSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Exam Creator Settings' });
+        new Setting(containerEl)
+            .setName('Exam creator settings')
+            .setHeading();
 
         new Setting(containerEl)
-            .setName('Shuffle Questions')
+            .setName('Shuffle questions')
             .setDesc('Randomize the order of questions in each exam')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.shuffleQuestions)
@@ -728,7 +776,7 @@ class ExamCreatorSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Shuffle Answers')
+            .setName('Shuffle answers')
             .setDesc('Randomize the order of answer options for each question')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.shuffleAnswers)
@@ -738,7 +786,7 @@ class ExamCreatorSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Show Timer')
+            .setName('Show timer')
             .setDesc('Display a timer during the exam')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.showTimer)
@@ -748,7 +796,7 @@ class ExamCreatorSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Default Time Limit')
+            .setName('Default time limit')
             .setDesc('Default time limit in minutes (0 = no limit)')
             .addText(text => text
                 .setValue(this.plugin.settings.defaultTimeLimit.toString())
@@ -771,25 +819,25 @@ export default class ExamCreatorPlugin extends Plugin {
         await this.loadSettings();
 
         // Add ribbon icon
-        this.addRibbonIcon('check-square', 'Start Exam', () => {
-            this.startExamFromCurrentFile();
+        this.addRibbonIcon('check-square', 'Start exam', () => {
+            void this.startExamFromCurrentFile();
         });
 
         // Add command to start exam
         this.addCommand({
             id: 'start-exam',
-            name: 'Start Exam from Current Note',
-            editorCallback: (editor: Editor, view: MarkdownView) => {
-                this.startExamFromCurrentFile();
+            name: 'Start exam from current note',
+            editorCallback: () => {
+                void this.startExamFromCurrentFile();
             }
         });
 
         // Add command to preview questions
         this.addCommand({
             id: 'preview-questions',
-            name: 'Preview Questions in Current Note',
-            editorCallback: (editor: Editor, view: MarkdownView) => {
-                this.previewQuestions();
+            name: 'Preview questions in current note',
+            editorCallback: () => {
+                void this.previewQuestions();
             }
         });
 
