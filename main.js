@@ -88,7 +88,7 @@ function parseQuestionBlock(block) {
   let imageUrl;
   let answerLineIndex = -1;
   const imagePattern = /!\[\[([^\]]+)\]\]|!\[([^\]]*)\]\(([^)]+)\)/;
-  let questionTextLines = [questionText];
+  const questionTextLines = [questionText];
   let i = 1;
   while (i < lines.length) {
     const line = lines[i];
@@ -174,13 +174,14 @@ function shuffleArray(array) {
   return shuffled;
 }
 var ExamModal = class extends import_obsidian.Modal {
-  constructor(app, questions, settings, sourcePath) {
+  constructor(app, questions, settings, sourcePath, plugin) {
     super(app);
     this.currentIndex = 0;
     this.timerInterval = null;
     this.examContainer = null;
     this.settings = settings;
     this.sourcePath = sourcePath;
+    this.plugin = plugin;
     this.questions = settings.shuffleQuestions ? shuffleArray(questions) : [...questions];
     if (settings.shuffleAnswers) {
       this.questions = this.questions.map((q) => ({
@@ -191,16 +192,20 @@ var ExamModal = class extends import_obsidian.Modal {
     this.startTime = Date.now();
   }
   onOpen() {
-    const { contentEl } = this;
+    const { contentEl, modalEl } = this;
+    modalEl.addClass("exam-creator-modal-container");
     contentEl.empty();
     contentEl.addClass("exam-creator-modal");
     const header = contentEl.createDiv("exam-header");
-    const progressInfo = header.createDiv("exam-progress");
-    progressInfo.createSpan({ text: `Question ` });
+    const headerLeft = header.createDiv("exam-header-left");
+    headerLeft.createDiv({ cls: "exam-title", text: "Exam in progress" });
+    const progressInfo = headerLeft.createDiv("exam-progress");
+    progressInfo.createSpan({ text: "Question " });
     progressInfo.createSpan({ cls: "current-question", text: "1" });
     progressInfo.createSpan({ text: ` of ${this.questions.length}` });
+    const headerRight = header.createDiv("exam-header-right");
     if (this.settings.showTimer) {
-      const timerEl = header.createDiv("exam-timer");
+      const timerEl = headerRight.createDiv("exam-timer");
       timerEl.createSpan({ cls: "timer-icon", text: "\u23F1\uFE0F" });
       timerEl.createSpan({ cls: "timer-value", text: "00:00" });
       this.timerInterval = window.setInterval(() => {
@@ -215,22 +220,50 @@ var ExamModal = class extends import_obsidian.Modal {
     }
     const progressBar = contentEl.createDiv("exam-progress-bar");
     progressBar.createDiv("exam-progress-fill");
-    this.examContainer = contentEl.createDiv("exam-container");
-    const nav = contentEl.createDiv("exam-navigation");
-    const prevBtn = nav.createEl("button", { text: "\u2190 Previous", cls: "exam-btn exam-btn-secondary" });
-    prevBtn.onclick = () => this.goToPrevious();
-    const questionNav = nav.createDiv("question-nav");
+    const mainContent = contentEl.createDiv("exam-main-content");
+    const sidebar = mainContent.createDiv("exam-sidebar");
+    const sidebarHeader = sidebar.createDiv("sidebar-header");
+    sidebarHeader.createEl("h3", { text: "Questions" });
+    const statusSummary = sidebar.createDiv("status-summary");
+    const answeredStatus = statusSummary.createDiv("status-item");
+    answeredStatus.createDiv({ cls: "status-dot answered" });
+    answeredStatus.createSpan({ cls: "status-count answered-count", text: "0" });
+    answeredStatus.createSpan({ text: " answered" });
+    const remainingStatus = statusSummary.createDiv("status-item");
+    remainingStatus.createDiv({ cls: "status-dot remaining" });
+    remainingStatus.createSpan({ cls: "status-count remaining-count", text: this.questions.length.toString() });
+    remainingStatus.createSpan({ text: " remaining" });
+    const questionGrid = sidebar.createDiv("question-grid");
     this.questions.forEach((_, idx) => {
-      const btn = questionNav.createEl("button", {
-        text: (idx + 1).toString(),
-        cls: "question-nav-btn"
-      });
-      btn.onclick = () => this.goToQuestion(idx);
+      const gridItem = questionGrid.createDiv("grid-item");
+      gridItem.textContent = (idx + 1).toString();
+      gridItem.onclick = () => this.goToQuestion(idx);
     });
-    const nextBtn = nav.createEl("button", { text: "Next \u2192", cls: "exam-btn exam-btn-secondary" });
+    this.examContainer = mainContent.createDiv("exam-container");
+    const bottomNav = contentEl.createDiv("exam-bottom-nav");
+    const navLeft = bottomNav.createDiv("nav-left");
+    const prevBtn = navLeft.createEl("button", { text: "\u2190 Previous", cls: "exam-btn exam-btn-secondary" });
+    prevBtn.onclick = () => this.goToPrevious();
+    const navCenter = bottomNav.createDiv("nav-center");
+    const jumpContainer = navCenter.createDiv("jump-container");
+    jumpContainer.createSpan({ cls: "jump-label", text: "Go to:" });
+    const jumpInput = jumpContainer.createEl("input", {
+      type: "number",
+      cls: "jump-input",
+      attr: { min: "1", max: this.questions.length.toString() }
+    });
+    jumpInput.value = "1";
+    jumpInput.onchange = () => {
+      const num = parseInt(jumpInput.value);
+      if (num >= 1 && num <= this.questions.length) {
+        this.goToQuestion(num - 1);
+      }
+    };
+    const navRight = bottomNav.createDiv("nav-right");
+    const nextBtn = navRight.createEl("button", { text: "Next \u2192", cls: "exam-btn exam-btn-secondary" });
     nextBtn.onclick = () => this.goToNext();
-    const submitContainer = contentEl.createDiv("exam-submit-container");
-    const submitBtn = submitContainer.createEl("button", { text: "Submit exam", cls: "exam-btn exam-btn-primary" });
+    const submitFooter = contentEl.createDiv("exam-submit-footer");
+    const submitBtn = submitFooter.createEl("button", { text: "Submit exam", cls: "exam-btn exam-btn-primary exam-btn-large" });
     submitBtn.onclick = () => this.submitExam();
     this.renderQuestion();
   }
@@ -243,23 +276,45 @@ var ExamModal = class extends import_obsidian.Modal {
     if (currentQuestionEl) {
       currentQuestionEl.textContent = (this.currentIndex + 1).toString();
     }
+    const jumpInput = this.contentEl.querySelector(".jump-input");
+    if (jumpInput) {
+      jumpInput.value = (this.currentIndex + 1).toString();
+    }
     const progressFill = this.contentEl.querySelector(".exam-progress-fill");
     if (progressFill) {
       const percentage = (this.currentIndex + 1) / this.questions.length * 100;
       progressFill.style.width = `${percentage}%`;
     }
-    const navBtns = this.contentEl.querySelectorAll(".question-nav-btn");
-    navBtns.forEach((btn, idx) => {
-      btn.removeClass("active", "answered");
+    const gridItems = this.contentEl.querySelectorAll(".grid-item");
+    gridItems.forEach((item, idx) => {
+      item.removeClass("active", "answered");
       if (idx === this.currentIndex) {
-        btn.addClass("active");
+        item.addClass("active");
       }
-      if (this.questions[idx].userAnswer !== void 0) {
-        btn.addClass("answered");
+      const q = this.questions[idx];
+      if (q.userAnswer !== void 0) {
+        const answer = q.userAnswer;
+        if (Array.isArray(answer) ? answer.length > 0 : answer !== "") {
+          item.addClass("answered");
+        }
       }
     });
-    const card = this.examContainer.createDiv("question-card");
-    const badge = card.createDiv("question-type-badge");
+    const answeredCount = this.questions.filter((q) => {
+      if (!q.userAnswer)
+        return false;
+      return Array.isArray(q.userAnswer) ? q.userAnswer.length > 0 : q.userAnswer !== "";
+    }).length;
+    const answeredCountEl = this.contentEl.querySelector(".answered-count");
+    const remainingCountEl = this.contentEl.querySelector(".remaining-count");
+    if (answeredCountEl)
+      answeredCountEl.textContent = answeredCount.toString();
+    if (remainingCountEl)
+      remainingCountEl.textContent = (this.questions.length - answeredCount).toString();
+    const wrapper = this.examContainer.createDiv("question-card-wrapper");
+    const card = wrapper.createDiv("question-card");
+    const questionHeader = card.createDiv("question-header");
+    questionHeader.createDiv({ cls: "question-number", text: `Question ${this.currentIndex + 1} of ${this.questions.length}` });
+    const badge = questionHeader.createDiv("question-type-badge");
     if (question.type === "multiple") {
       badge.textContent = "Multiple choice (select all that apply)";
       badge.addClass("badge-multiple");
@@ -270,11 +325,15 @@ var ExamModal = class extends import_obsidian.Modal {
       badge.textContent = "Single choice";
       badge.addClass("badge-single");
     }
-    const questionTextEl = card.createDiv("question-text");
-    questionTextEl.createEl("strong", { text: `Q${question.id}. ` });
+    const questionBody = card.createDiv("question-body");
+    const questionTextEl = questionBody.createDiv("question-text");
+    questionTextEl.createEl("span", { cls: "question-id", text: `Q${question.id}. ` });
     questionTextEl.createSpan({ text: question.text });
+    if (question.type === "multiple") {
+      questionBody.createDiv({ cls: "question-instruction", text: "Select all answers that apply" });
+    }
     if (question.imageUrl) {
-      const imageContainer = card.createDiv("question-image-container");
+      const imageContainer = questionBody.createDiv("question-image-container");
       const img = imageContainer.createEl("img", { cls: "question-image" });
       const imagePath = question.imageUrl;
       const file = this.app.metadataCache.getFirstLinkpathDest(imagePath, this.sourcePath);
@@ -285,7 +344,7 @@ var ExamModal = class extends import_obsidian.Modal {
       }
       img.alt = "Question image";
     }
-    const answerSection = card.createDiv("answer-section");
+    const answerSection = questionBody.createDiv("answer-section");
     if (question.type === "freetext") {
       const input = answerSection.createEl("textarea", {
         cls: "freetext-input",
@@ -294,7 +353,7 @@ var ExamModal = class extends import_obsidian.Modal {
       input.value = question.userAnswer || "";
       input.oninput = () => {
         question.userAnswer = input.value;
-        this.updateNavButtons();
+        this.updateStatus();
       };
     } else {
       const optionsContainer = answerSection.createDiv("options-container");
@@ -319,8 +378,9 @@ var ExamModal = class extends import_obsidian.Modal {
         const label = optionEl.createEl("label", {
           attr: { for: `option-${question.id}-${option.letter}` }
         });
-        label.createSpan({ cls: "option-letter", text: option.letter });
-        label.createSpan({ cls: "option-text", text: option.text });
+        const optionContent = label.createDiv("option-content");
+        optionContent.createSpan({ cls: "option-letter", text: option.letter });
+        optionContent.createSpan({ cls: "option-text", text: option.text });
         input.onchange = () => {
           if (question.type === "multiple") {
             const checked = optionsContainer.querySelectorAll("input:checked");
@@ -335,20 +395,34 @@ var ExamModal = class extends import_obsidian.Modal {
             var _a;
             (_a = checked.closest(".option-item")) == null ? void 0 : _a.addClass("selected");
           });
-          this.updateNavButtons();
+          this.updateStatus();
         };
       });
     }
   }
-  updateNavButtons() {
-    const navBtns = this.contentEl.querySelectorAll(".question-nav-btn");
-    navBtns.forEach((btn, idx) => {
-      btn.removeClass("answered");
-      const answer = this.questions[idx].userAnswer;
-      if (answer !== void 0 && (Array.isArray(answer) ? answer.length > 0 : answer !== "")) {
-        btn.addClass("answered");
+  updateStatus() {
+    const gridItems = this.contentEl.querySelectorAll(".grid-item");
+    gridItems.forEach((item, idx) => {
+      item.removeClass("answered");
+      const q = this.questions[idx];
+      if (q.userAnswer !== void 0) {
+        const answer = q.userAnswer;
+        if (Array.isArray(answer) ? answer.length > 0 : answer !== "") {
+          item.addClass("answered");
+        }
       }
     });
+    const answeredCount = this.questions.filter((q) => {
+      if (!q.userAnswer)
+        return false;
+      return Array.isArray(q.userAnswer) ? q.userAnswer.length > 0 : q.userAnswer !== "";
+    }).length;
+    const answeredCountEl = this.contentEl.querySelector(".answered-count");
+    const remainingCountEl = this.contentEl.querySelector(".remaining-count");
+    if (answeredCountEl)
+      answeredCountEl.textContent = answeredCount.toString();
+    if (remainingCountEl)
+      remainingCountEl.textContent = (this.questions.length - answeredCount).toString();
   }
   goToPrevious() {
     if (this.currentIndex > 0) {
@@ -419,7 +493,7 @@ var ExamModal = class extends import_obsidian.Modal {
       questions: this.questions
     };
     this.close();
-    new ResultsModal(this.app, result, this.sourcePath).open();
+    new ResultsModal(this.app, result, this.sourcePath, this.plugin).open();
   }
   onClose() {
     if (this.timerInterval) {
@@ -429,109 +503,350 @@ var ExamModal = class extends import_obsidian.Modal {
   }
 };
 var ResultsModal = class extends import_obsidian.Modal {
-  constructor(app, result, sourcePath) {
+  constructor(app, result, sourcePath, plugin) {
     super(app);
     this.result = result;
     this.sourcePath = sourcePath;
+    this.plugin = plugin;
   }
   onOpen() {
-    const { contentEl } = this;
+    const { contentEl, modalEl } = this;
+    modalEl.addClass("exam-results-modal-container");
     contentEl.empty();
     contentEl.addClass("exam-results-modal");
     const header = contentEl.createDiv("results-header");
     header.createEl("h2", { text: "Exam results" });
-    const scoreCard = contentEl.createDiv("score-card");
-    const scoreCircle = scoreCard.createDiv("score-circle");
+    const subtitle = `${this.result.totalQuestions} questions completed`;
+    header.createDiv({ cls: "results-subtitle", text: subtitle });
+    const scoreSection = contentEl.createDiv("score-section");
+    const scoreCircle = scoreSection.createDiv("score-circle");
     const percentage = this.result.percentage;
     scoreCircle.addClass(percentage >= 70 ? "pass" : "fail");
     scoreCircle.createSpan({ cls: "score-value", text: `${percentage}%` });
     scoreCircle.createSpan({ cls: "score-label", text: percentage >= 70 ? "PASSED" : "FAILED" });
-    const stats = scoreCard.createDiv("score-stats");
+    const statsGrid = scoreSection.createDiv("stats-grid");
     const statItems = [
-      { label: "Total Questions", value: this.result.totalQuestions.toString(), cls: "stat-total" },
-      { label: "Correct", value: this.result.correctAnswers.toString(), cls: "stat-correct" },
-      { label: "Wrong", value: this.result.wrongAnswers.toString(), cls: "stat-wrong" },
-      { label: "Skipped", value: this.result.skipped.toString(), cls: "stat-skipped" }
+      { label: "Total", value: this.result.totalQuestions.toString(), cls: "stat-total", icon: "\u{1F4CB}" },
+      { label: "Correct", value: this.result.correctAnswers.toString(), cls: "stat-correct", icon: "\u2713" },
+      { label: "Wrong", value: this.result.wrongAnswers.toString(), cls: "stat-wrong", icon: "\u2717" },
+      { label: "Skipped", value: this.result.skipped.toString(), cls: "stat-skipped", icon: "\u25CB" }
     ];
     statItems.forEach((item) => {
-      const stat = stats.createDiv(`stat-item ${item.cls}`);
+      const stat = statsGrid.createDiv(`stat-card ${item.cls}`);
+      stat.createDiv({ cls: "stat-icon", text: item.icon });
       stat.createDiv({ cls: "stat-value", text: item.value });
       stat.createDiv({ cls: "stat-label", text: item.label });
     });
     const minutes = Math.floor(this.result.timeTaken / 60);
     const seconds = this.result.timeTaken % 60;
-    const timeText = `Time taken: ${minutes}m ${seconds}s`;
-    scoreCard.createDiv({ cls: "time-taken", text: timeText });
-    const reviewSection = contentEl.createDiv("review-section");
-    reviewSection.createEl("h3", { text: "Review answers" });
-    this.result.questions.forEach((q, idx) => {
-      const isCorrect = this.checkAnswer(q);
-      const wasSkipped = !q.userAnswer || Array.isArray(q.userAnswer) && q.userAnswer.length === 0 || q.userAnswer === "";
-      const reviewItem = reviewSection.createDiv("review-item");
-      reviewItem.addClass(wasSkipped ? "skipped" : isCorrect ? "correct" : "incorrect");
-      const statusIcon = reviewItem.createDiv("status-icon");
-      statusIcon.textContent = wasSkipped ? "\u25CB" : isCorrect ? "\u2713" : "\u2717";
-      const content = reviewItem.createDiv("review-content");
-      const questionHeader = content.createDiv("review-question-header");
-      questionHeader.createSpan({ text: `Q${q.id}. ${q.text}` });
-      if (q.imageUrl) {
-        const imageContainer = content.createDiv("review-image-container");
-        const img = imageContainer.createEl("img", { cls: "review-image" });
-        const file = this.app.metadataCache.getFirstLinkpathDest(q.imageUrl, this.sourcePath);
-        if (file) {
-          img.src = this.app.vault.getResourcePath(file);
-        } else {
-          img.src = q.imageUrl;
-        }
-      }
-      if (q.options.length > 0) {
-        const optionsReview = content.createDiv("review-options");
-        q.options.forEach((opt) => {
-          const optEl = optionsReview.createDiv("review-option");
-          const isUserAnswer = Array.isArray(q.userAnswer) ? q.userAnswer.includes(opt.letter) : q.userAnswer === opt.letter;
-          const isCorrectAnswer = q.correctAnswers.includes(opt.letter);
-          if (isCorrectAnswer) {
-            optEl.addClass("correct-answer");
-          }
-          if (isUserAnswer && !isCorrectAnswer) {
-            optEl.addClass("wrong-answer");
-          }
-          if (isUserAnswer && isCorrectAnswer) {
-            optEl.addClass("user-correct");
-          }
-          optEl.createSpan({ cls: "option-letter", text: opt.letter });
-          optEl.createSpan({ cls: "option-text", text: opt.text });
-          if (isCorrectAnswer) {
-            optEl.createSpan({ cls: "correct-marker", text: " \u2713" });
-          }
-          if (isUserAnswer && !isCorrectAnswer) {
-            optEl.createSpan({ cls: "wrong-marker", text: " \u2717" });
-          }
-        });
-      } else {
-        const freetextReview = content.createDiv("review-freetext");
-        const userAnswerText = typeof q.userAnswer === "string" ? q.userAnswer : "(not answered)";
-        freetextReview.createDiv({ text: `Your answer: ${userAnswerText}` });
-        freetextReview.createDiv({ text: `Correct answer: ${q.correctAnswers[0]}`, cls: "correct-answer-text" });
-      }
+    const timeText = `\u23F1\uFE0F Time taken: ${minutes}m ${seconds}s`;
+    scoreSection.createDiv({ cls: "time-taken", text: timeText });
+    const actionsSection = contentEl.createDiv("results-actions");
+    const reviewBtn = actionsSection.createEl("button", {
+      text: "\u{1F4D6} Review all answers",
+      cls: "exam-btn exam-btn-primary exam-btn-large"
     });
-    const btnContainer = contentEl.createDiv("results-buttons");
-    const closeBtn = btnContainer.createEl("button", { text: "Close", cls: "exam-btn exam-btn-primary" });
+    reviewBtn.style.width = "100%";
+    reviewBtn.onclick = () => {
+      this.close();
+      new FullReviewModal(this.app, this.result, this.sourcePath, this.plugin).open();
+    };
+    if (this.result.wrongAnswers > 0 || this.result.skipped > 0) {
+      const saveBtn = actionsSection.createEl("button", {
+        text: "\u{1F4BE} Save wrong answers to file",
+        cls: "exam-btn exam-btn-warning exam-btn-large"
+      });
+      saveBtn.style.width = "100%";
+      saveBtn.onclick = () => {
+        void this.saveWrongAnswersToFile();
+      };
+    }
+    const closeBtn = actionsSection.createEl("button", {
+      text: "Close",
+      cls: "exam-btn exam-btn-secondary exam-btn-large"
+    });
+    closeBtn.style.width = "100%";
     closeBtn.onclick = () => this.close();
   }
-  checkAnswer(q) {
+  async saveWrongAnswersToFile() {
+    const wrongQuestions = this.result.questions.filter((q) => {
+      if (!q.userAnswer || Array.isArray(q.userAnswer) && q.userAnswer.length === 0 || q.userAnswer === "") {
+        return true;
+      }
+      if (q.type === "freetext") {
+        const userAnswerLower = q.userAnswer.toLowerCase().trim();
+        const correctAnswerLower = q.correctAnswers[0].toLowerCase().trim();
+        return userAnswerLower !== correctAnswerLower;
+      } else {
+        const userAnswers = Array.isArray(q.userAnswer) ? q.userAnswer : [q.userAnswer];
+        const sortedUser = [...userAnswers].sort().join(",");
+        const sortedCorrect = [...q.correctAnswers].sort().join(",");
+        return sortedUser !== sortedCorrect;
+      }
+    });
+    if (wrongQuestions.length === 0) {
+      new import_obsidian.Notice("No wrong answers to save!");
+      return;
+    }
+    let content = `# Wrong/Skipped Questions - Review
+
+`;
+    content += `Generated: ${new Date().toLocaleString()}
+`;
+    content += `Score: ${this.result.percentage}% (${this.result.correctAnswers}/${this.result.totalQuestions})
+
+`;
+    content += `---
+
+`;
+    wrongQuestions.forEach((q, idx) => {
+      content += `Q${q.id}. ${q.text}
+`;
+      if (q.options.length > 0) {
+        q.options.forEach((opt) => {
+          content += `${opt.letter}. ${opt.text}
+`;
+        });
+      }
+      content += `Answer: ${q.correctAnswers.join(", ")}
+`;
+      if (q.userAnswer) {
+        const userAns = Array.isArray(q.userAnswer) ? q.userAnswer.join(", ") : q.userAnswer;
+        if (userAns) {
+          content += `Your answer: ${userAns}
+`;
+        }
+      } else {
+        content += `Your answer: (skipped)
+`;
+      }
+      content += `
+`;
+    });
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const basePath = this.sourcePath.replace(/\.md$/, "");
+    const fileName = `${basePath} - Wrong Answers ${timestamp}.md`;
+    try {
+      const existingFile = this.app.vault.getAbstractFileByPath(fileName);
+      if (existingFile instanceof import_obsidian.TFile) {
+        await this.app.vault.modify(existingFile, content);
+      } else {
+        await this.app.vault.create(fileName, content);
+      }
+      new import_obsidian.Notice(`Saved ${wrongQuestions.length} wrong/skipped questions to:
+${fileName}`);
+    } catch (error) {
+      new import_obsidian.Notice("Failed to save file. Please try again.");
+      console.error("Error saving wrong answers:", error);
+    }
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var FullReviewModal = class extends import_obsidian.Modal {
+  constructor(app, result, sourcePath, plugin) {
+    super(app);
+    this.currentFilter = "all";
+    this.currentQuestionIndex = 0;
+    this.filteredQuestions = [];
+    this.detailArea = null;
+    this.result = result;
+    this.sourcePath = sourcePath;
+    this.plugin = plugin;
+  }
+  onOpen() {
+    const { contentEl, modalEl } = this;
+    modalEl.addClass("full-review-modal-container");
+    contentEl.empty();
+    contentEl.addClass("full-review-modal");
+    const header = contentEl.createDiv("review-modal-header");
+    header.createEl("h2", { text: "Review answers" });
+    const headerStats = header.createDiv("header-stats");
+    headerStats.createDiv({ cls: "header-stat correct", text: `\u2713 ${this.result.correctAnswers}` });
+    headerStats.createDiv({ cls: "header-stat wrong", text: `\u2717 ${this.result.wrongAnswers}` });
+    headerStats.createDiv({ cls: "header-stat skipped", text: `\u25CB ${this.result.skipped}` });
+    const closeBtn = header.createEl("button", { cls: "review-close-btn", text: "\u2715" });
+    closeBtn.onclick = () => this.close();
+    const mainLayout = contentEl.createDiv("review-main-layout");
+    const sidebar = mainLayout.createDiv("review-sidebar");
+    const filterContainer = sidebar.createDiv("review-filter-container");
+    const counts = this.getCounts();
+    const filters = [
+      { id: "all", label: "All", count: this.result.totalQuestions },
+      { id: "correct", label: "Correct", count: counts.correct },
+      { id: "wrong", label: "Wrong", count: counts.wrong },
+      { id: "skipped", label: "Skipped", count: counts.skipped }
+    ];
+    filters.forEach((filter) => {
+      const btn = filterContainer.createEl("button", { cls: "sidebar-filter-btn" });
+      btn.createSpan({ text: filter.label });
+      btn.createSpan({ cls: "filter-count", text: filter.count.toString() });
+      if (filter.id === "all")
+        btn.addClass("active");
+      btn.onclick = () => {
+        filterContainer.querySelectorAll(".sidebar-filter-btn").forEach((b) => b.removeClass("active"));
+        btn.addClass("active");
+        this.currentFilter = filter.id;
+        this.currentQuestionIndex = 0;
+        this.updateQuestionList();
+        this.renderCurrentQuestion();
+      };
+    });
+    sidebar.createDiv("review-question-list");
+    this.detailArea = mainLayout.createDiv("review-detail-area");
+    const navBar = contentEl.createDiv("review-nav-bar");
+    const navLeft = navBar.createDiv("nav-left");
+    const prevBtn = navLeft.createEl("button", { text: "\u2190 Previous", cls: "exam-btn exam-btn-secondary" });
+    prevBtn.onclick = () => this.goToPrevious();
+    navBar.createDiv({ cls: "nav-info review-nav-info" });
+    const navRight = navBar.createDiv("nav-right");
+    const nextBtn = navRight.createEl("button", { text: "Next \u2192", cls: "exam-btn exam-btn-secondary" });
+    nextBtn.onclick = () => this.goToNext();
+    this.updateQuestionList();
+    this.renderCurrentQuestion();
+  }
+  getCounts() {
+    let correct = 0;
+    let wrong = 0;
+    let skipped = 0;
+    this.result.questions.forEach((q) => {
+      const status = this.getQuestionStatus(q);
+      if (status === "correct")
+        correct++;
+      else if (status === "wrong")
+        wrong++;
+      else
+        skipped++;
+    });
+    return { correct, wrong, skipped };
+  }
+  getQuestionStatus(q) {
     if (!q.userAnswer || Array.isArray(q.userAnswer) && q.userAnswer.length === 0 || q.userAnswer === "") {
-      return false;
+      return "skipped";
     }
     if (q.type === "freetext") {
       const userAnswerLower = q.userAnswer.toLowerCase().trim();
       const correctAnswerLower = q.correctAnswers[0].toLowerCase().trim();
-      return userAnswerLower === correctAnswerLower;
+      return userAnswerLower === correctAnswerLower ? "correct" : "wrong";
     } else {
       const userAnswers = Array.isArray(q.userAnswer) ? q.userAnswer : [q.userAnswer];
       const sortedUser = [...userAnswers].sort().join(",");
       const sortedCorrect = [...q.correctAnswers].sort().join(",");
-      return sortedUser === sortedCorrect;
+      return sortedUser === sortedCorrect ? "correct" : "wrong";
+    }
+  }
+  updateQuestionList() {
+    this.filteredQuestions = [];
+    this.result.questions.forEach((q, idx) => {
+      const status = this.getQuestionStatus(q);
+      if (this.currentFilter === "all" || this.currentFilter === status) {
+        this.filteredQuestions.push({ question: q, originalIndex: idx, status });
+      }
+    });
+    const listContainer = this.contentEl.querySelector(".review-question-list");
+    if (!listContainer)
+      return;
+    listContainer.empty();
+    this.filteredQuestions.forEach((item, idx) => {
+      const listItem = listContainer.createDiv(`question-list-item ${item.status}`);
+      if (idx === this.currentQuestionIndex)
+        listItem.addClass("active");
+      const statusIcon = listItem.createDiv("list-status-icon");
+      statusIcon.textContent = item.status === "correct" ? "\u2713" : item.status === "wrong" ? "\u2717" : "\u25CB";
+      const info = listItem.createDiv("list-question-info");
+      info.createDiv({ cls: "list-question-num", text: `Question ${item.originalIndex + 1}` });
+      info.createDiv({ cls: "list-question-preview", text: item.question.text.substring(0, 50) + "..." });
+      listItem.onclick = () => {
+        this.currentQuestionIndex = idx;
+        this.updateQuestionList();
+        this.renderCurrentQuestion();
+      };
+    });
+  }
+  renderCurrentQuestion() {
+    if (!this.detailArea)
+      return;
+    this.detailArea.empty();
+    const navInfo = this.contentEl.querySelector(".review-nav-info");
+    if (navInfo) {
+      navInfo.textContent = `${this.currentQuestionIndex + 1} of ${this.filteredQuestions.length}`;
+    }
+    if (this.filteredQuestions.length === 0) {
+      this.detailArea.createDiv({ cls: "no-questions-message", text: "No questions match this filter." });
+      return;
+    }
+    const item = this.filteredQuestions[this.currentQuestionIndex];
+    const q = item.question;
+    const card = this.detailArea.createDiv(`review-question-card ${item.status}`);
+    const banner = card.createDiv(`status-banner ${item.status}`);
+    banner.textContent = item.status === "correct" ? "\u2713 Correct" : item.status === "wrong" ? "\u2717 Incorrect" : "\u25CB Skipped";
+    const content = card.createDiv("review-question-content");
+    const questionText = content.createDiv("review-full-question-text");
+    questionText.createEl("strong", { text: `Q${q.id}. ` });
+    questionText.createSpan({ text: q.text });
+    if (q.imageUrl) {
+      const imageContainer = content.createDiv("review-full-image-container");
+      const img = imageContainer.createEl("img", { cls: "review-full-image" });
+      const file = this.app.metadataCache.getFirstLinkpathDest(q.imageUrl, this.sourcePath);
+      if (file) {
+        img.src = this.app.vault.getResourcePath(file);
+      } else {
+        img.src = q.imageUrl;
+      }
+    }
+    if (q.options.length > 0) {
+      const optionsContainer = content.createDiv("review-full-options");
+      q.options.forEach((opt) => {
+        const optEl = optionsContainer.createDiv("review-full-option");
+        const isUserAnswer = Array.isArray(q.userAnswer) ? q.userAnswer.includes(opt.letter) : q.userAnswer === opt.letter;
+        const isCorrectAnswer = q.correctAnswers.includes(opt.letter);
+        if (isCorrectAnswer) {
+          optEl.addClass("correct-answer");
+        }
+        if (isUserAnswer && !isCorrectAnswer) {
+          optEl.addClass("wrong-answer");
+        }
+        if (isUserAnswer && isCorrectAnswer) {
+          optEl.addClass("user-correct");
+        }
+        const optionMain = optEl.createDiv("option-main");
+        optionMain.createSpan({ cls: "option-letter", text: opt.letter });
+        optionMain.createSpan({ cls: "option-text", text: opt.text });
+        const markers = optEl.createDiv("option-markers");
+        if (isCorrectAnswer) {
+          markers.createSpan({ cls: "marker correct-marker", text: "Correct" });
+        }
+        if (isUserAnswer && !isCorrectAnswer) {
+          markers.createSpan({ cls: "marker wrong-marker", text: "Your answer" });
+        }
+      });
+    } else {
+      const ftContainer = content.createDiv("review-freetext-container");
+      const userRow = ftContainer.createDiv("freetext-row");
+      userRow.createSpan({ cls: "freetext-label", text: "Your answer:" });
+      const userValue = userRow.createSpan({ cls: "freetext-value" });
+      const userAnswerText = typeof q.userAnswer === "string" && q.userAnswer ? q.userAnswer : "(not answered)";
+      userValue.textContent = userAnswerText;
+      if (item.status !== "correct")
+        userValue.addClass("user");
+      const correctRow = ftContainer.createDiv("freetext-row");
+      correctRow.createSpan({ cls: "freetext-label", text: "Correct answer:" });
+      correctRow.createSpan({ cls: "freetext-value correct", text: q.correctAnswers[0] });
+    }
+  }
+  goToPrevious() {
+    if (this.currentQuestionIndex > 0) {
+      this.currentQuestionIndex--;
+      this.updateQuestionList();
+      this.renderCurrentQuestion();
+    }
+  }
+  goToNext() {
+    if (this.currentQuestionIndex < this.filteredQuestions.length - 1) {
+      this.currentQuestionIndex++;
+      this.updateQuestionList();
+      this.renderCurrentQuestion();
     }
   }
   onClose() {
@@ -613,7 +928,7 @@ var ExamCreatorPlugin = class extends import_obsidian.Plugin {
       return;
     }
     new import_obsidian.Notice(`Found ${questions.length} questions. Starting exam...`);
-    new ExamModal(this.app, questions, this.settings, activeFile.path).open();
+    new ExamModal(this.app, questions, this.settings, activeFile.path, this).open();
   }
   async previewQuestions() {
     const activeFile = this.app.workspace.getActiveFile();
@@ -629,9 +944,9 @@ var ExamCreatorPlugin = class extends import_obsidian.Plugin {
     }
     const modal = new import_obsidian.Modal(this.app);
     modal.contentEl.addClass("exam-preview-modal");
-    modal.contentEl.createEl("h2", { text: `Preview: ${questions.length} Questions Found` });
+    modal.contentEl.createEl("h2", { text: `Preview: ${questions.length} questions found` });
     const list = modal.contentEl.createDiv("preview-list");
-    questions.forEach((q, idx) => {
+    questions.forEach((q) => {
       const item = list.createDiv("preview-item");
       item.createDiv({ cls: "preview-question", text: `Q${q.id}. ${q.text}` });
       item.createDiv({ cls: "preview-type", text: `Type: ${q.type} | Options: ${q.options.length} | Answer: ${q.correctAnswers.join(", ")}` });
