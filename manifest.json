@@ -1,7 +1,7 @@
 {
   "id": "exam-creator",
   "name": "Exam Creator",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minAppVersion": "0.15.0",
   "description": "Create and take exams with multiple choice questions from your notes. Features scoring, timer, and review mode.",
   "author": "Iwan Hoogendoorn",
