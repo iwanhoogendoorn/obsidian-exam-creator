@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "minAppVersion": "0.15.0",
   "description": "Create and take exams with multiple choice questions from your notes. Features scoring, timer, and review mode.",
-  "author": "Exam Creator",
-  "authorUrl": "",
+  "author": "Iwan Hoogendoorn",
+  "authorUrl": "https://github.com/iwanhoogendoorn",
   "isDesktopOnly": false
 }
